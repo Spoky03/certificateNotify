@@ -10,3 +10,10 @@ export interface Certificate extends Document {
   notifyBefore: number;
   _id: Object; // Adjust the type of _id to ObjectId
 }
+
+export interface User extends Document {
+  email: string;
+  password: string;
+  certificates: Certificate[]; // Adjust the type of certificates to an array of Certificate
+  globalNotification: number;
+}
