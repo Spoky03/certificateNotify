@@ -29,6 +29,11 @@ const CertificateSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
+    remote: {
+        type: Boolean,
+        required: true,
+        default: false,
+    },
 });
 
 export default mongoose.model('Certificate', CertificateSchema);
