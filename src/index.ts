@@ -5,13 +5,25 @@ import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import Certificate from "./schemas/Certificate";
 import User from "./schemas/User";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { User as UserInterface } from "./types/Certificate";
 import { findToNotify } from "./mailer";
-
+import bcrypt from "bcryptjs";
+declare global {
+  namespace Express {
+    interface Request {
+      user?: string | JwtPayload;
+    }
+  }
+}
 dotenv.config();
 
 const app: Application = express();
 app.use(express.json());
 app.use(bodyParser.json());
+const SECRET_KEY = process.env.SECRET || "secret";
+const TOKEN_EXPIRATION = Number(process.env.TOKEN_EXPIRATION) || 60 * 60 * 24; // 24 hours
+
 mongoose
   .connect(process.env.DATABASE_URL || "")
   .then(() => {
@@ -24,12 +36,27 @@ mongoose
 const unknownEndpoint = (_req: Request, res: Response) => {
   res.status(404).send({ error: "unknown endpoint" });
 };
-
+// Middleware to verify JWT token
+const verifyToken = (req: Request, res: Response, next: any) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) {
+    res.status(401).send("Authentication required.");
+    return;
+  }
+  jwt.verify(token, SECRET_KEY, (err, decoded) => {
+    if (err) {
+      res.status(403).send("Invalid token.");
+      return;
+    }
+    req.user = decoded;
+    next();
+  });
+};
 app.get("/", (req: Request, res: Response) => {
   res.send("Welcome to Express & TypeScript Server");
 });
-app.get("/cert", (req: Request, res: Response) => {
-  User.findOne({ email: req.query.email }).then((user) => {
+app.get("/cert", verifyToken , (req: Request, res: Response) => {
+  User.findById((req.user as JwtPayload)?.id).then((user) => {
     if (user) {
       Certificate.find({ _id: { $in: user.certificates } }).then((certs) => {
         res.json(certs);
@@ -39,7 +66,7 @@ app.get("/cert", (req: Request, res: Response) => {
     }
   });
 });
-app.post("/cert", (req: Request, res: Response) => {
+app.post("/cert", verifyToken, (req: Request, res: Response) => {
   const {
     Subject,
     Issuer,
@@ -48,11 +75,17 @@ app.post("/cert", (req: Request, res: Response) => {
     NotAfter,
     timeRemaining,
     notifyBefore,
-    email,
   } = req.body;
   //if thumbprint exists, update the notifyBefore
   Certificate.findOne({ Thumbprint }).then((cert) => {
     if (cert) {
+      //if notifyBefore is 0, remove the certificate
+      if (notifyBefore === 0) {
+        cert.deleteOne().then(() => {
+          res.json({ message: "Certificate removed" });
+        });
+        return;
+      }
       cert.notifyBefore = notifyBefore;
       cert.save().then((cert) => {
         res.json(cert);
@@ -68,7 +101,7 @@ app.post("/cert", (req: Request, res: Response) => {
         notifyBefore,
       });
       newCert.save().then((cert) =>
-        User.findOne({ email }).then((user) => {
+        User.findById((req.user as JwtPayload)?.id).then((user) => {
           if (user) {
             user.certificates.push(cert._id); // Push the ObjectId instead of the entire document
             user.save().then((user) => {
@@ -82,22 +115,11 @@ app.post("/cert", (req: Request, res: Response) => {
     }
   });
 });
-app.post("/register", (req: Request, res: Response) => {
-  const { email, password } = req.body;
+
+app.put("/globalNotification", verifyToken, (req: Request, res: Response) => {
+  const { days } = req.body;
   //Save to
-  const newUser = new User({
-    email,
-    password,
-  });
-  newUser.save().then((user) => {
-    res.json(user);
-  });
-});
-app.put("/globalNotification", (req: Request, res: Response) => {
-  console.log(req.body);
-  const { days, email } = req.body;
-  //Save to
-  User.findOne({ email }).then((user) => {
+  User.findById((req.user as JwtPayload)?.id).then((user) => {
     if (user) {
       user.globalNotification = days;
       user.save().then((user) => {
@@ -106,6 +128,41 @@ app.put("/globalNotification", (req: Request, res: Response) => {
     } else {
       res.status(404).json({ message: "User not found" });
     }
+  });
+});
+app.post("/login", async (req: Request, res: Response): Promise<any> => {
+  const { email, password } = req.body;
+  const user = (await User.findOne({ email })) as unknown as UserInterface;
+  if (!user || !user.email || !user.password) {
+    return res.status(404).send("User not found");
+  }
+
+  const passwordIsValid = bcrypt.compareSync(password, user.password);
+
+  if (!passwordIsValid) {
+    return res.status(401).send("Invalid password");
+  }
+
+  const token = jwt.sign({ id: user._id }, SECRET_KEY, {
+    expiresIn: TOKEN_EXPIRATION,
+  });
+
+  res.status(200).send({ auth: true, token, exp: Date.now() + 1000 * TOKEN_EXPIRATION });
+});
+
+app.post("/register", (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  bcrypt.hash(password, 8, (err, hash) => {
+    if (err) {
+      return res.status(500).send("Error hashing password");
+    }
+    const newUser = new User({
+      email,
+      password: hash,
+    });
+    newUser.save().then((user) => {
+      res.json(user);
+    });
   });
 });
 

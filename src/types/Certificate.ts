@@ -1,4 +1,4 @@
-import { Document } from 'mongoose';
+import { Document, ObjectId } from 'mongoose';
 
 export interface Certificate extends Document {
   Subject: string;
@@ -16,4 +16,5 @@ export interface User extends Document {
   password: string;
   certificates: Certificate[]; // Adjust the type of certificates to an array of Certificate
   globalNotification: number;
+  _id: ObjectId; 
 }
