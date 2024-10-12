@@ -11,7 +11,6 @@ const CertificateSchema = new mongoose.Schema({
     },
     Thumbprint: {
         type: String,
-        required: true,
     },
     NotBefore: {
         type: String,

@@ -75,7 +75,35 @@ app.post("/cert", verifyToken, (req: Request, res: Response) => {
     NotAfter,
     timeRemaining,
     notifyBefore,
+    remote
   } = req.body;
+  if (remote && !Thumbprint) {
+    const newCert = new Certificate({
+      Subject,
+      Issuer,
+      NotBefore,
+      NotAfter,
+      timeRemaining,
+      notifyBefore: 0,
+      remote,
+    });
+    newCert.save().then((cert) => {
+      User.findById((req.user as JwtPayload)?.id).then((user) => {
+        if (user) {
+          user.certificates.push(cert._id); // Push the ObjectId instead of the entire document
+          user.save().then((user) => {
+            res.json(user);
+          });
+        } else {
+          res.status(404).json({ message: "User not found" });
+        }
+      });
+      // set the id of the certificate to the thumbprint
+      newCert.Thumbprint = String(newCert._id);
+      newCert.save()
+    });
+    return;
+  }
   //if thumbprint exists, update the notifyBefore
   Certificate.findOne({ Thumbprint }).then((cert) => {
     if (cert) {
@@ -99,6 +127,7 @@ app.post("/cert", verifyToken, (req: Request, res: Response) => {
         NotAfter,
         timeRemaining,
         notifyBefore,
+        remote: false,
       });
       newCert.save().then((cert) =>
         User.findById((req.user as JwtPayload)?.id).then((user) => {
@@ -173,4 +202,4 @@ app.listen(PORT, () => {
   console.log(`Server is Fire at http://localhost:${PORT}`);
 });
 
-// cron.schedule("* * * * *", findToNotify);
+//cron.schedule("* * * * *", findToNotify);
