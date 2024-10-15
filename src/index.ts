@@ -159,6 +159,15 @@ app.put("/globalNotification", verifyToken, (req: Request, res: Response) => {
     }
   });
 });
+app.get("/globalNotification", verifyToken, (req: Request, res: Response) => {
+  User.findById((req.user as JwtPayload)?.id).then((user) => {
+    if (user) {
+      res.json(user.globalNotification);
+    } else {
+      res.status(404).json({ message: "User not found" });
+    }
+  });
+});
 app.post("/login", async (req: Request, res: Response): Promise<any> => {
   const { email, password } = req.body;
   const user = (await User.findOne({ email })) as unknown as UserInterface;
