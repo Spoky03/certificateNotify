@@ -212,3 +212,6 @@ app.listen(PORT, () => {
 });
 
 //cron.schedule("* * * * *", findToNotify);
+
+// cron every day at 00:00
+cron.schedule("0 0 * * *", findToNotify);
